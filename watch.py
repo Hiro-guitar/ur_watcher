@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 API_URL = "https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detail_bukken_room/"
 LINE_BROADCAST_URL = "https://api.line.me/v2/bot/message/broadcast"
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 SITE_BASE = "https://www.ur-net.go.jp"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 JST = timezone(timedelta(hours=9))
@@ -198,15 +199,26 @@ def text_message(rooms):
     return "\n".join(lines).strip()
 
 
-def line_broadcast(messages, token):
-    body = json.dumps({"messages": messages}, ensure_ascii=False).encode("utf-8")
-    http_post(LINE_BROADCAST_URL, body, {
+def line_send(messages, token, user_id=None):
+    """LINE_USER_ID があれば本人だけにpush、無ければ友だち全員にbroadcast。
+
+    自分専用のアカウントなら友だちは自分だけなのでbroadcastで足りる。
+    顧客がいる既存アカウントを使う場合は、必ず LINE_USER_ID を設定してpushにすること
+    （broadcastだと友だち全員に飛ぶ）。
+    """
+    if user_id:
+        url = LINE_PUSH_URL
+        payload = {"to": user_id, "messages": messages}
+    else:
+        url = LINE_BROADCAST_URL
+        payload = {"messages": messages}
+    http_post(url, json.dumps(payload, ensure_ascii=False).encode("utf-8"), {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + token,
     })
 
 
-def notify(rooms, token):
+def notify(rooms, token, user_id=None):
     """新着の部屋をLINEに送る。1回の通知は1メッセージ（無料枠の節約）。"""
     names = "、".join(r["name"] for r in rooms[:3])
     alt = "【UR新着】%s%s" % (names, " ほか%d件" % (len(rooms) - 3) if len(rooms) > 3 else "")
@@ -218,11 +230,11 @@ def notify(rooms, token):
         "contents": {"type": "carousel", "contents": bubbles},
     }
     try:
-        line_broadcast([flex], token)
+        line_send([flex], token, user_id)
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")
         print("Flexメッセージの送信に失敗（%s）。テキストで再送します: %s" % (e.code, detail), file=sys.stderr)
-        line_broadcast([{"type": "text", "text": text_message(rooms)[:4900]}], token)
+        line_send([{"type": "text", "text": text_message(rooms)[:4900]}], token, user_id)
 
 
 # ---------------------------------------------------------------- 本体
@@ -254,10 +266,13 @@ def main():
         return 1
     state = load_json(args.state, {})
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
+    user_id = os.environ.get("LINE_USER_ID", "").strip()
 
     if not token and not args.dry_run:
         print("環境変数 LINE_CHANNEL_ACCESS_TOKEN が設定されていません", file=sys.stderr)
         return 1
+    if not args.dry_run:
+        print("送信方法: %s" % ("push（自分だけに送信）" if user_id else "broadcast（友だち全員に送信）"))
 
     new_rooms = []
     next_state = dict(state)
@@ -301,7 +316,7 @@ def main():
             print("(--dry-run のため通知しません)")
         else:
             try:
-                notify(new_rooms, token)
+                notify(new_rooms, token, user_id)
                 print("LINEに通知しました")
             except Exception as e:
                 # 通知できなかった分を次回また拾えるよう、状態は保存しない

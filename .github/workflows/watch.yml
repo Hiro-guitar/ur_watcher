@@ -26,6 +26,8 @@ jobs:
       - name: 空室をチェックして新着があれば通知
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          # 既存のLINE公式アカウントを使う場合は必須（未設定だと友だち全員に配信される）
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python watch.py
 
       - name: 空室の状態を保存

@@ -20,7 +20,20 @@ POST https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detail_bukken_roo
 
 ## セットアップ
 
-### 1. LINEの通知先を作る（10分くらい）
+### 1. LINEの通知先を決める
+
+送信方法は2つあり、環境変数で自動的に切り替わる。
+
+| 環境変数 | 送信方法 | 使う場面 |
+| --- | --- | --- |
+| `LINE_CHANNEL_ACCESS_TOKEN` だけ | broadcast（**友だち全員**に配信） | この通知専用に新しく作ったアカウント（友だちが自分だけ） |
+| `LINE_CHANNEL_ACCESS_TOKEN` + `LINE_USER_ID` | push（**自分だけ**に送信） | 既存のアカウントを流用するとき |
+
+> **既存の公式アカウントを使うなら `LINE_USER_ID` を必ず設定すること。**
+> 未設定だとbroadcastになり、そのアカウントの友だち全員に空室通知が飛ぶ。
+> 友だちの多いアカウント（顧客が登録しているもの）は、トークンが漏れたときの被害も大きいので避けたほうがよい。
+
+#### 新しくアカウントを作る場合（10分くらい）
 
 LINE Notifyは2025年に終了したので、**自分専用のLINE公式アカウント**を1つ作って、そこから自分に送る。
 友だちが自分だけなら「全員に配信（broadcast）」＝自分だけに届くので、ユーザーIDの取得もWebhookも不要。
@@ -36,6 +49,15 @@ LINE Notifyは2025年に終了したので、**自分専用のLINE公式アカ�
 5. [LINE Official Account Manager](https://manager.line.biz/) の 設定 → 応答設定 で
    - **応答メッセージ：オフ**（「メッセージありがとうございます」の自動返信を止める）
    - あいさつメッセージもオフでよい
+
+#### 既存のアカウントを流用する場合
+
+1. [LINE Developersコンソール](https://developers.line.biz/console/) で そのアカウントのMessaging APIチャネルを開く
+   - Official Account Managerで作ったアカウントは、[Messaging API設定]から利用開始するとDevelopers側に現れる
+2. **[Messaging API設定]** タブ → チャネルアクセストークン（長期）を発行
+3. **[チャネル基本設定]** タブの一番下 → **「あなたのユーザーID」**（`U`で始まる33文字）をコピー
+   - これが `LINE_USER_ID`。この値を入れると自分だけに届く
+4. そのアカウントを自分のLINEで友だち追加しておく（未追加だとpushが届かない）
 
 > トークンは他人に見せない。このリポジトリにも絶対にコミットしない（GitHub Secretsに入れる）。
 
@@ -53,6 +75,16 @@ read -s LINE_CHANNEL_ACCESS_TOKEN && export LINE_CHANNEL_ACCESS_TOKEN && python3
 ```
 
 （`read -s` にすると、貼り付けたトークンが画面にもシェル履歴にも残らない）
+
+既存アカウントを使う場合はユーザーIDも一緒に:
+
+```bash
+read -s LINE_CHANNEL_ACCESS_TOKEN && export LINE_CHANNEL_ACCESS_TOKEN
+export LINE_USER_ID=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+python3 watch.py --notify-first
+```
+
+実行時に `送信方法: push（自分だけに送信）` と出れば正しい。`broadcast` と出たら `LINE_USER_ID` が読めていないので中止すること。
 
 ### 3. GitHub Actionsで24時間動かす
 
@@ -73,9 +105,10 @@ privateにしたい場合は [.github/workflows/watch.yml](.github/workflows/wat
 
 ```bash
 gh secret set LINE_CHANNEL_ACCESS_TOKEN
+gh secret set LINE_USER_ID   # 既存アカウントを流用する場合は必須
 ```
 
-（プロンプトが出たらトークンを貼り付けてEnter）
+（プロンプトが出たら値を貼り付けてEnter）
 
 最後に手動で1回動かして確認:
 
