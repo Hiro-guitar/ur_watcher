@@ -1,0 +1,10 @@
+{
+  "_comment": "通知が届くかを試すための設定。実際に空室がある団地を指定している。本番の監視対象は config.json のほう。",
+  "danchi": [
+    {
+      "name": "竹の塚第一（通知テスト用）",
+      "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_1300.html"
+    }
+  ],
+  "filters": {}
+}
