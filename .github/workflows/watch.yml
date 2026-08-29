@@ -1,0 +1,42 @@
+name: UR空室チェック
+
+on:
+  schedule:
+    # 5分ごと（GitHub側の混雑で数分遅れることがある）
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ur-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 空室をチェックして新着があれば通知
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: python watch.py
+
+      - name: 空室の状態を保存
+        run: |
+          if [ -z "$(git status --porcelain state.json)" ]; then
+            echo "変化なし"
+            exit 0
+          fi
+          git config user.name "ur-watcher"
+          git config user.email "actions@users.noreply.github.com"
+          git add state.json
+          git commit -m "chore: 空室の状態を更新"
+          git pull --rebase --autostash
+          git push
