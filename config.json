@@ -9,5 +9,11 @@
     "rent_max": null,
     "madori": [],
     "floorspace_min": null
-  }
+  },
+  "_canary_comment": "APIの仕様変更に気づくための健全性チェック用。常に空室が出ている大規模団地。全部そろって0件になったら、APIが壊れたか仕様が変わった可能性が高いのでジョブを失敗させる（＝GitHubから通知が届く）。",
+  "canary": [
+    {"name": "館ヶ丘", "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_2600.html"},
+    {"name": "赤羽北二丁目", "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_2800.html"},
+    {"name": "ニュータウン小山田桜台", "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_3600.html"}
+  ]
 }

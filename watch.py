@@ -276,7 +276,10 @@ def main():
 
     new_rooms = []
     next_state = dict(state)
-    now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+    failed = []
+    # 秒まで記録すると毎回state.jsonに差分が出て、5分ごとにコミットが積まれてしまう。
+    # 日付だけにして「1日1コミット（＝リポジトリの活動も途切れない）」に抑える。
+    today = datetime.now(JST).strftime("%Y-%m-%d")
 
     for entry in config.get("danchi", []):
         url = entry["url"]
@@ -286,6 +289,7 @@ def main():
             raw_rooms = fetch_rooms(shisya, danchi, shikibetu)
         except Exception as e:  # 1団地の失敗で全体を止めない
             print("[%s] 取得に失敗: %s" % (name, e), file=sys.stderr)
+            failed.append(name)
             continue
 
         rooms = [to_room(r, name) for r in raw_rooms]
@@ -304,7 +308,7 @@ def main():
         next_state[key] = {
             "name": name,
             "url": url,
-            "checked_at": now,
+            "checked_at": today,
             # 募集終了した部屋はここから消える＝再募集されたらまた新着として通知される
             "room_ids": sorted(r["id"] for r in rooms),
         }
@@ -325,6 +329,29 @@ def main():
 
     if not args.dry_run:
         save_json(args.state, next_state)
+
+    # 健全性チェック：常に空室があるはずの団地まで一斉に0件なら、
+    # 空室が無いのではなくAPI側が変わった可能性が高い（黙って取りこぼすのを防ぐ）。
+    canary = config.get("canary") or []
+    if canary and not failed:
+        total = 0
+        for entry in canary:
+            try:
+                total += len(fetch_rooms(*parse_danchi_url(entry["url"])))
+            except Exception as e:
+                print("[健全性チェック] %s の取得に失敗: %s" % (entry.get("name"), e), file=sys.stderr)
+                failed.append(entry.get("name") or entry["url"])
+        if not failed and total == 0:
+            print("[健全性チェック] 参照用の%d団地がすべて0件です。APIの仕様変更を疑ってください。"
+                  % len(canary), file=sys.stderr)
+            return 1
+        print("[健全性チェック] 参照用の%d団地で %d件の募集を確認" % (len(canary), total))
+
+    if failed:
+        # 取得できないまま黙って動き続けると新着を取りこぼす。
+        # ジョブを失敗させて、GitHubからの通知で気づけるようにする。
+        print("取得に失敗した団地があります: %s" % "、".join(failed), file=sys.stderr)
+        return 1
     return 0
 
 
