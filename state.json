@@ -2,7 +2,9 @@
   "20_4900": {
     "checked_at": "2026-09-01",
     "name": "新柳沢",
-    "room_ids": [],
+    "room_ids": [
+      "000080508"
+    ],
     "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_4900.html"
   }
 }
