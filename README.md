@@ -86,35 +86,35 @@ python3 watch.py --notify-first
 
 実行時に `送信方法: push（自分だけに送信）` と出れば正しい。`broadcast` と出たら `LINE_USER_ID` が読めていないので中止すること。
 
-### 3. GitHub Actionsで24時間動かす
+### 3. Google Apps Scriptで24時間動かす（現在の運用）
 
-Macの電源に関係なく動かすため、GitHubに置いて5分ごとに実行する。
+Macの電源に関係なく、5分おきに動かす。[gas/Code.js](gas/Code.js) がその本体。
 
-```bash
-cd ~/Desktop/ur_watcher
-git init && git add -A && git commit -m "初期コミット"
-gh repo create ur_watcher --public --source=. --push
-```
+エディタ: https://script.google.com/home/projects/10DQoDGFlsfRXb9nWZMwA4qHNoZhlPHjZZo_JGegfnzIN39OaqBYsAgGU/edit
 
-**publicにする理由**: GitHub Actionsはpublicリポジトリなら実行時間が無料無制限。privateだと無料枠が月2,000分で、
-5分ごと（月約8,600回、1回あたり最低1分課金）だと確実に超える。
-公開されるのは監視スクリプトと団地の空室状況だけで、トークンはSecretsに入るのでリポジトリには含まれない。
-privateにしたい場合は [.github/workflows/watch.yml](.github/workflows/watch.yml) のcronを `*/30 * * * *`（30分ごと）以上にすること。
+1. エディタ左下の **⚙ プロジェクトの設定** → 一番下の **スクリプト プロパティ** → 「スクリプト プロパティを追加」
+   - `LINE_CHANNEL_ACCESS_TOKEN` = チャネルアクセストークン（長期）
+   - 友だちが自分だけでないアカウントを使う場合は `LINE_USER_ID` も追加する
+2. エディタに戻り、上部の関数リストで **setup** を選んで **実行**
+   - 初回は認証を求められる。「権限を確認」→ アカウント選択 →「詳細」→「（安全ではないページ）に移動」→「許可」
+   - 自作スクリプトなのでこの警告が出るのは正常
+3. 実行ログに「セットアップ完了：5分おきのトリガーを作成しました。」と出れば稼働開始
 
-続いてトークンをSecretsに登録する:
+動作確認したいときは **testNotify** を実行すると、今ある空室が新着扱いで通知される。
 
-```bash
-gh secret set LINE_CHANNEL_ACCESS_TOKEN
-gh secret set LINE_USER_ID   # 既存アカウントを流用する場合は必須
-```
-
-（プロンプトが出たら値を貼り付けてEnter）
-
-最後に手動で1回動かして確認:
+コードを直したらローカルから反映する:
 
 ```bash
-gh workflow run "UR空室チェック" && sleep 20 && gh run list --limit 3
+bash gas_push.sh
 ```
+
+**なぜGASなのか**: 最初はGitHub Actionsのcron（5分ごと）で動かしていたが、実測で3〜6時間に1回しか実行されなかった。
+GitHubのスケジュールはベストエフォートで、混雑時は遅延・間引きされる仕様のため。GASの時間主導トリガーは5分間隔が実際に守られる。
+
+### 付録：GitHub Actions版（現在は停止）
+
+[.github/workflows/watch.yml](.github/workflows/watch.yml) と [watch.py](watch.py) はPython版として残してある。
+ローカルでの動作確認やデバッグに使える。ワークフロー自体は二重通知を避けるため無効化済み。
 
 ## 監視する団地を増やす
 
