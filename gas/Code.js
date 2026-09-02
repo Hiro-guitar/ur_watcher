@@ -18,6 +18,8 @@ const API_URL = 'https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detai
 const LINE_BROADCAST_URL = 'https://api.line.me/v2/bot/message/broadcast';
 const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 const SITE_BASE = 'https://www.ur-net.go.jp';
+// 何回続けて取得に失敗したら警告を送るか（5分間隔なので 2 = 10分間ダメなら通知）
+const FAIL_STREAK_TO_WARN = 2;
 
 const CONFIG = {
   danchi: [
@@ -80,6 +82,7 @@ function run(notifyAll) {
   const nextState = {};
   const newRooms = [];
   const failed = [];
+  const failedDetail = [];
   const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
   CONFIG.danchi.forEach(function (entry) {
@@ -90,6 +93,7 @@ function run(notifyAll) {
     } catch (e) {
       Logger.log('[' + entry.name + '] 取得に失敗: ' + e);
       failed.push(entry.name);
+      failedDetail.push(entry.name + '（' + e + '）');
       // 取得できなかった団地は前回の記録をそのまま引き継ぐ（消すと次回に誤通知するため）
       if (state[code.key]) nextState[code.key] = state[code.key];
       return;
@@ -124,12 +128,30 @@ function run(notifyAll) {
   }
   saveState(nextState);
 
+  // UR側は一時的に応答しないことがある。1回きりの失敗は次の実行（5分後）で拾い直せるので、
+  // 連続して失敗したときだけ通知する（毎回鳴ると本当の異常に気づけなくなる）。
   if (failed.length > 0) {
-    warnOnce('取得失敗:' + failed.join(','),
-             '⚠️ UR空室監視：' + failed.join('、') + ' の空室情報を取得できませんでした。'
-             + '一時的な不調なら次回復帰します。続くようなら確認してください。', token, userId);
+    const streak = Number(props.getProperty('FAIL_STREAK') || '0') + 1;
+    props.setProperty('FAIL_STREAK', String(streak));
+    Logger.log('取得に失敗しました（連続' + streak + '回目）: ' + failedDetail.join(' / '));
+    if (streak >= FAIL_STREAK_TO_WARN) {
+      warnOnce('取得失敗:' + failed.join(','),
+               '⚠️ UR空室監視：' + failed.join('、') + ' の空室情報を'
+               + (streak * 5) + '分間（連続' + streak + '回）取得できていません。\n'
+               + failedDetail.join('\n'), token, userId);
+    }
     return;
   }
+
+  if (Number(props.getProperty('FAIL_STREAK') || '0') >= FAIL_STREAK_TO_WARN) {
+    // 警告を出したあとで直った場合だけ、復帰したことを知らせる
+    try {
+      lineSend([{ type: 'text', text: '✅ UR空室監視：復旧しました。監視を続けています。' }], token, userId);
+    } catch (e) {
+      Logger.log('復旧通知の送信に失敗: ' + e);
+    }
+  }
+  props.setProperty('FAIL_STREAK', '0');
   checkCanary(token, userId);
 }
 
@@ -194,12 +216,17 @@ function fetchRooms(code) {
       pageIndex: '0',
       sp: ''
     },
-    headers: { 'Accept': 'application/json, text/javascript, */*; q=0.01' },
+    headers: {
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      // GASの既定のUser-Agentのままだと弾かれることがあるので、ブラウザと同じ体裁で送る
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36',
+      'Referer': SITE_BASE + '/chintai/'
+    },
     muteHttpExceptions: true
   };
 
   let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt++) {  // 一時的な不調に備えて1回だけ再試行する
+  for (let attempt = 0; attempt < 3; attempt++) {  // 一時的な不調に備えて再試行する
     try {
       const res = UrlFetchApp.fetch(API_URL, options);
       const status = res.getResponseCode();
@@ -212,7 +239,7 @@ function fetchRooms(code) {
     } catch (e) {
       lastError = e;
     }
-    Utilities.sleep(2000);
+    Utilities.sleep(2000 * (attempt + 1));  // 2秒 → 4秒 と間隔を空けて待つ
   }
   throw lastError;
 }
